@@ -23,16 +23,14 @@ unsigned long elapsedTime = 0;
 unsigned long interval = 5000; // 5 segundos
 
 // Variables para la programación del usuario
-int targetHour = 0;
-int targetMinute = 0;
+unsigned long targetTime = 0;
 int repetitions = 0;
 unsigned long intervalBetweenRepetitions = 0;
 
 // Estados del menú
 enum MenuState {
   CONFIRMATION,
-  HOUR_SELECTION,
-  MINUTE_SELECTION,
+  TIMER_SELECTION,
   RUNNING
 };
 
@@ -51,7 +49,6 @@ void setup() {
   pinMode(echoPin, INPUT);
   pinMode(A0, INPUT_PULLUP);
   pinMode(A1, INPUT_PULLUP);
-  pinMode(A2, INPUT_PULLUP);
 
   Serial.begin(9600);
 
@@ -85,11 +82,8 @@ void loop() {
     case CONFIRMATION:
       menuConfirmation();
       break;
-    case HOUR_SELECTION:
-      menuHourSelection();
-      break;
-    case MINUTE_SELECTION:
-      menuMinuteSelection();
+    case TIMER_SELECTION:
+      menuTimerSelection();
       break;
     case RUNNING:
       runProgram();
@@ -98,15 +92,16 @@ void loop() {
 }
 
 void menuConfirmation() {
-  const int startButtonPin = A2;
+  const int startButtonPin = A1;
 
   if (digitalRead(startButtonPin) == LOW) {
     delay(100);
     lcd.clear();
-    lcd.print("Hora: 00:00");
+    lcd.print("Temporizador: ");
     lcd.setCursor(0, 1);
-    lcd.print("Reps: 0");
-    menuState = HOUR_SELECTION;
+    lcd.print("20:00");
+    targetTime = 20 * 60; // 20 minutos
+    menuState = TIMER_SELECTION;
   }
 
   // Verificar si la distancia es menor o igual a 60 cm
@@ -126,52 +121,37 @@ void menuConfirmation() {
   }
 }
 
-void menuHourSelection() {
-  const int hourButtonPin = A0;
+void menuTimerSelection() {
+  const int timerButtonPin = A0;
   const int confirmButtonPin = A1;
 
-  if (digitalRead(hourButtonPin) == LOW) {
+  if (digitalRead(timerButtonPin) == LOW) {
     delay(100);
-    targetHour = (targetHour + 1) % 24;
-    lcd.setCursor(6, 0);
-    printDigits(targetHour);
-  }
-
-  if (digitalRead(confirmButtonPin) == LOW) {
-    delay(100);
+    targetTime += 20; // Aumentar en 20 minutos
+    if (targetTime >= 60 * 24) {
+      targetTime = 0; // Volver a 0 después de 24 horas
+    }
     lcd.setCursor(0, 1);
-    lcd.print("Min: 00");
-    menuState = MINUTE_SELECTION;
-  }
-}
-
-void menuMinuteSelection() {
-  const int minuteButtonPin = A0;
-  const int confirmButtonPin = A1;
-
-  if (digitalRead(minuteButtonPin) == LOW) {
-    delay(100);
-    targetMinute = (targetMinute + 1) % 60;
-    lcd.setCursor(9, 0);
-    printDigits(targetMinute);
+    printDigits(targetTime / 60);
+    lcd.print(":");
+    printDigits(targetTime % 60);
   }
 
   if (digitalRead(confirmButtonPin) == LOW) {
     delay(100);
     lcd.clear();
     lcd.print("Hora: ");
-    printDigits(targetHour);
+    printDigits(targetTime / 60);
     lcd.print(":");
-    printDigits(targetMinute);
+    printDigits(targetTime % 60);
     lcd.setCursor(0, 1);
     lcd.print("Reps: 0");
 
     intervalBetweenRepetitions = (48 * 60 * 60 * 1000) / 6; // 48 horas divididas en 6 repeticiones
 
     unsigned long currentTime = millis();
-    unsigned long targetTime = (targetHour * 60 + targetMinute) * 60 * 1000;
-    unsigned long remainingTime = targetTime - (currentTime % (24 * 60 * 60 * 1000));
-    startTime = millis() + remainingTime;
+    unsigned long remainingTime = targetTime * 60 * 1000;
+    startTime = currentTime + remainingTime;
     elapsedTime = 0;
     repetitions = 0;
 
@@ -182,7 +162,7 @@ void menuMinuteSelection() {
 }
 
 void runProgram() {
-  const int startButtonPin = A2;
+  const int startButtonPin = A1;
 
   if (digitalRead(startButtonPin) == LOW) {
     delay(100);
@@ -220,7 +200,6 @@ void runProgram() {
       menuState = CONFIRMATION;
     } else {
       lcd.clear();
-      intervalBetweenRepetitions = (48 * 60 * 60 * 1000) / 6; // 48 horas divididas en 6 repeticiones
       unsigned long remainingTime = intervalBetweenRepetitions;
       unsigned long remainingMinutes = remainingTime / (60 * 1000);
       unsigned long remainingSeconds = (remainingTime / 1000) % 60;
@@ -229,6 +208,10 @@ void runProgram() {
       printDigits(remainingMinutes);
       lcd.print(":");
       printDigits(remainingSeconds);
+
+      // Actualizar intervalo y tiempo de inicio para la siguiente repetición
+      interval = intervalBetweenRepetitions;
+      startTime = millis();
     }
   } else {
     unsigned long remainingTime = (interval - elapsedTime) / 1000; // Convertir a segundos
@@ -244,18 +227,6 @@ void runProgram() {
   elapsedTime = millis() - startTime;
 }
 
-float distanceToObstacle() {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-
-  unsigned long pulseDuration = pulseIn(echoPin, HIGH);
-  float distance = pulseDuration * 0.034 / 2; // Conversión a centímetros
-
-  return distance;
-}
 
 void printDigits(int digits) {
   if (digits < 10) {
@@ -275,4 +246,17 @@ void deactivateMotor() {
     digitalWrite(motorPin2, LOW); // Desactivar el motor
     isMotorActive = false;
   }
+}
+
+float distanceToObstacle() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  unsigned long pulseDuration = pulseIn(echoPin, HIGH);
+  float distance = pulseDuration * 0.034 / 2; // Conversión a centímetros
+
+  return distance;
 }
